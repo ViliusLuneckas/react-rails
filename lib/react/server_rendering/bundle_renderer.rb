@@ -11,16 +11,21 @@ module React
     # - implements console replay
     class BundleRenderer < ExecJSRenderer
       # Reimplement console methods for replaying on the client
-      CONSOLE_POLYFILL = File.read(File.join(File.dirname(__FILE__), 'bundle_renderer/console_polyfill.js'))
-      CONSOLE_REPLAY   = File.read(File.join(File.dirname(__FILE__), 'bundle_renderer/console_replay.js'))
-      CONSOLE_RESET    = File.read(File.join(File.dirname(__FILE__), 'bundle_renderer/console_reset.js'))
-      TIMEOUT_POLYFILL = File.read(File.join(File.dirname(__FILE__), 'bundle_renderer/timeout_polyfill.js'))
+
+      POLYFILL_CODE_SOURCES = {
+        console:        'console_polyfill.js',
+        console_replay: 'console_replay.js',
+        console_reset:  'console_reset.js',
+        timeout:        'timeout_polyfill.js'
+      }.freeze
+
+      delegate :polyfill_code_for, to: :class
 
       def initialize(options={})
         @replay_console = options.fetch(:replay_console, true)
         filenames = options.fetch(:files, ['server_rendering.js'])
-        js_code = CONSOLE_POLYFILL.dup
-        js_code << TIMEOUT_POLYFILL.dup
+        js_code = polyfill_code_for(:console)
+        js_code << polyfill_code_for(:timeout)
         js_code << options.fetch(:code, '')
 
         filenames.each do |filename|
@@ -41,15 +46,29 @@ module React
       end
 
       def before_render(component_name, props, prerender_options)
-        @replay_console ? CONSOLE_RESET : ''
+        @replay_console ? polyfill_code_for(:console_reset) : ''
       end
 
       def after_render(component_name, props, prerender_options)
-        @replay_console ? CONSOLE_REPLAY : ''
+        @replay_console ? polyfill_code_for(:console_replay) : ''
       end
 
       class << self
         attr_accessor :asset_container_class
+
+        def polyfill_code_for(key)
+          polyfill_codes[key].dup
+        end
+
+        def polyfill_codes
+          @polyfill_codes ||= begin
+            {}.tap do |result|
+              POLYFILL_CODE_SOURCES.each do |key, file_name|
+                result[key] = File.read(File.join(File.dirname(__FILE__), "bundle_renderer/#{file_name}"))
+              end
+            end
+          end
+        end
       end
 
       # Get an object which exposes assets by their logical path.
